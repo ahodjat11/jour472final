@@ -1,0 +1,1533 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+#1. Load Tidyverse, janitor and arcos, tidycensus, mapview, ggthemes, scales
+library(tidyverse)
+library(janitor)
+library(arcos)
+library(tidycensus)
+library(ggthemes)
+library(scales)
+
+key <- "uO4EK6I"
+
+```
+
+```{r}
+#2. Finidng the largest single shipment in Montgomery County
+
+moco_buyer_details <- buyer_details(county="Montgomery", state="MD", key = key)
+moco_monthly_buyers_2012 <-combined_buyer_monthly(county="Montgomery", state="MD", year = 2012, key = key)
+moco_2012_detailed <- moco_buyer_details %>%
+  left_join(moco_monthly_buyers_2012, by = "BUYER_DEA_NO")
+
+#moco_2012_working <- moco_2012_working %>%
+  mutate(pills_category = case_when(
+    dosage_unit > 10000 ~ "large shipment",
+    dosage_unit > 5000 ~ "medium shipment",
+    TRUE ~ "small shipment"))
+
+#view(moco_2012_working)
+
+
+
+```
+
+```{r}
+
+#3. Annual pill totals in Montgomery County
+
+moco_yearly_pills <- summarized_county_annual(county = "Montgomery", state = "MD", key = key)
+
+view(moco_yearly_pills)
+
+#peaks in 2010 and 2011, with a slight dip in 2012.
+
+
+```
+
+```{r}
+#4. Annual population and pills per capita in Montgomery County
+moco_population <- county_population(county = "Montgomery", state = "MD", key = key)	
+
+view(moco_population)
+
+#What were the pills per capita yearly?
+
+moco_population_working <- subset (moco_population, select = c(year, population))
+
+moco_per_capita <- inner_join(moco_population_working, moco_yearly_pills)
+
+#view(moco_per_capita)
+
+moco_per_capita_working <- moco_per_capita %>%
+  mutate(moco_annual = DOSAGE_UNIT/population)
+
+view(moco_per_capita_working)
+
+#interestingly enough, it seems the pills per capita increased yearly at the same rate the pills did.
+
+```
+
+```{r}
+#5. National correlation
+
+#Disclosure: This code isn't entirely mine, Leah Brennan helped me with it. 
+national_pills_working <- summarized_county_annual(key=key) %>%
+  group_by(countyfips, BUYER_COUNTY, BUYER_STATE) %>%
+  summarise(total_pills = sum(DOSAGE_UNIT)) %>%
+  inner_join(get_acs(geography = "county", variables = "B01001_001"), by =c("countyfips" = "GEOID")) %>%
+  mutate(pills_per_person = total_pills/estimate) %>%
+  select(-estimate, -moe) %>%
+  inner_join(get_acs(geography = "county", variables = "B19019_001", geometry = FALSE), by =c("countyfips" = "GEOID")) %>%
+  select(estimate, pills_per_person)
+
+cor(national_pills_working$pills_per_person, national_county_totals$estimate)
+cor.test(national_pills_working$pills_per_person,national_county_totals$estimate)
+
+#juding by the results of the correlation tests, we reject the null hypothesis, and there seems to be a substantial negative correlation between income and pill shipments
+
+
+```
+
+```{r}
+#6. Let's graph out the yearly pills in Montgomery County.
+
+ ggplot(moco_yearly_pills) +
+  geom_bar(stat="identity", aes(year, DOSAGE_UNIT), fill="plum") +
+  labs(x="Year", y="Total pills", title="In Montgomery County, opioids peak in 2010 and 2011", subtitle = "Total pills shipped to Montgomery County by year", caption = "Source: DEA ARCOS database, via Washington Post") +
+  scale_x_continuous(breaks = c(2006, 2007, 2008, 2009, 2010, 2011, 2012)) +
+  scale_y_continuous(labels = comma)
+
+
+
+```
+
+```{r}
+#7. Let's graph out pills per capita in Montgomery.
+
+ ggplot(moco_per_capita) +
+  geom_bar(stat="identity", aes(year, DOSAGE_UNIT), fill="peru") +
+  labs(x="Year", y="Total pills per person", title="In Montgomery County, opioids per capita peak in 2010 and 2011", subtitle = "Total pills shipped to Montgomery County by year", caption = "Source: DEA ARCOS database, via Washington Post") +
+  scale_x_continuous(breaks = c(2006, 2007, 2008, 2009, 2010, 2011, 2012)) +
+  scale_y_continuous(labels = comma)
+
+
+
+
+```
+
+```{r}
+#8. How did the opioid crisis hit MoCo's biggest cities? I went for 2012 for the purposes of having the most recent data handy.
+
+moco_cities_2012 <- moco_buyers_2012_detailed %>%
+  filter(BUYER_CITY %in% c("BETHESDA", "GAITHERSBURG", "KENSINGTON", "POTOMAC", "SILVER SPRING", "WHEATON")) %>%
+  select(BUYER_CITY, year, DOSAGE_UNIT)
+
+ggplot(moco_cities_2012) +
+  geom_bar(stat="identity", aes(year, DOSAGE_UNIT, fill=BUYER_CITY)) +
+  labs(x="Year", y="Total pills", title="Silver Spring saw the largest share of Mongtomery County's opioid shipments in 2012", subtitle = "Total pills per year shipped to Bethesda, Gaithersburg, Kensington,\nPotomac, Silver Spring and Wheaton", caption = "Source: DEA ARCOS database, via Washington Post") +
+  scale_x_continuous(breaks = c(2012)) +
+  scale_y_continuous(labels = comma)
+
+
+
+```
+
+```{r}
+#9. What were the annual pill totals per year in Queen Anne's?
+queena_yearly_pills <- summarized_county_annual(county = "Queen Annes", state = "MD", key = key)
+
+view(queena_yearly_pills)
+
+#peaks in 2010 and 2011, with a slight dip in 2012.
+
+```
+
+```{r}
+#10. Graphing out yearly pill totals in Queen Anne's.
+
+ggplot(queena_yearly_pills) +
+  geom_bar(stat="identity", aes(year, DOSAGE_UNIT), fill="plum") +
+  labs(x="Year", y="Total pills", title="In Queen Anne's County, opioid shipments plateau after 2009", subtitle = "Total pills shipped to Queen Anne's County by year", caption = "Source: DEA ARCOS database, via Washington Post") +
+  scale_x_continuous(breaks = c(2006, 2007, 2008, 2009, 2010, 2011, 2012)) +
+  scale_y_continuous(labels = comma)
+
+
+```
+
+```{r}
+#11. Montgomery County Correlation Tests
+
+moco_tract_income <- get_acs(geography = "tract", state="MD", county="Montgomery",
+              variables = "B19019_001", geometry = TRUE)
+moco_tract <- pharm_tracts(county = "Montgomery", state = "MD", key = key)
+moco_annual_buyer <- combined_buyer_annual(county = "Montgomery", state = "MD", key = key)
+moco_tract_data_working <- inner_join(moco_annual_buyer, moco_tract, by="BUYER_DEA_NO")
+moco_tract_data_working <- inner_join(moco_tract_data_working, moco_tract_income, by = "GEOID")
+moco_tract_data_working <-  subset (moco_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+moco_tract_data_working_2006 <- filter(moco_tract_data_working, year == 2006)
+moco_tract_data_working_2007 <- filter(moco_tract_data_working, year == 2007)
+moco_tract_data_working_2008 <- filter(moco_tract_data_working, year == 2008)
+moco_tract_data_working_2009 <- filter(moco_tract_data_working, year == 2009)
+moco_tract_data_working_2010 <- filter(moco_tract_data_working, year == 2010)
+moco_tract_data_working_2011 <- filter(moco_tract_data_working, year == 2011)
+moco_tract_data_working_2012 <- filter(moco_tract_data_working, year == 2012)
+
+cor.test(moco_tract_data_working_2006$DOSAGE_UNIT, moco_tract_data_working_2006$estimate, method = "pearson")
+cor.test(moco_tract_data_working_2007$DOSAGE_UNIT, moco_tract_data_working_2007$estimate, method = "pearson")
+cor.test(moco_tract_data_working_2008$DOSAGE_UNIT, moco_tract_data_working_2008$estimate, method = "pearson")
+cor.test(moco_tract_data_working_2009$DOSAGE_UNIT, moco_tract_data_working_2009$estimate, method = "pearson")
+cor.test(moco_tract_data_working_2010$DOSAGE_UNIT, moco_tract_data_working_2010$estimate, method = "pearson")
+cor.test(moco_tract_data_working_2011$DOSAGE_UNIT, moco_tract_data_working_2011$estimate, method = "pearson")
+cor.test(moco_tract_data_working_2012$DOSAGE_UNIT, moco_tract_data_working_2012$estimate, method = "pearson")
+
+
+```
+
+
+```{r}
+#12. Maryland Correlation Tests
+
+
+md_tract_income <- get_acs(geography = "county", state="MD",
+              variables = "B19019_001", geometry = TRUE) %>%
+rename(countyfips = GEOID)
+  
+md_annual_pills_2006 <- summarized_county_annual(state = "MD", key = key) 	%>%
+  filter(year == 2006)
+md_pills_income_2006 <- left_join(md_annual_pills_2006, md_tract_income, by = "countyfips")
+cor.test(md_pills_income_2006$DOSAGE_UNIT, md_pills_income_2006$estimate, method = "pearson")
+
+md_annual_pills_2007 <- summarized_county_annual(state = "MD", key = key) 	%>%
+  filter(year == 2007)
+md_pills_income_2007 <- left_join(md_annual_pills_2007, md_tract_income, by = "countyfips")
+cor.test(md_pills_income_2007$DOSAGE_UNIT, md_pills_income_2007$estimate, method = "pearson")
+
+md_annual_pills_2008 <- summarized_county_annual(state = "MD", key = key) 	%>%
+  filter(year == 2008)
+md_pills_income_2008 <- left_join(md_annual_pills_2008, md_tract_income, by = "countyfips")
+cor.test(md_pills_income_2008$DOSAGE_UNIT, md_pills_income_2008$estimate, method = "pearson")
+
+md_annual_pills_2009 <- summarized_county_annual(state = "MD", key = key) 	%>%
+  filter(year == 2009)
+md_pills_income_2009 <- left_join(md_annual_pills_2009, md_tract_income, by = "countyfips")
+cor.test(md_pills_income_2009$DOSAGE_UNIT, md_pills_income_2009$estimate, method = "pearson")
+
+md_annual_pills_2010 <- summarized_county_annual(state = "MD", key = key) 	%>%
+  filter(year == 2010)
+md_pills_income_2010 <- left_join(md_annual_pills_2010, md_tract_income, by = "countyfips")
+cor.test(md_pills_income_2010$DOSAGE_UNIT, md_pills_income_2010$estimate, method = "pearson")
+
+md_annual_pills_2011 <- summarized_county_annual(state = "MD", key = key) 	%>%
+  filter(year == 2011)
+md_pills_income_2011 <- left_join(md_annual_pills_2011, md_tract_income, by = "countyfips")
+cor.test(md_pills_income_2011$DOSAGE_UNIT, md_pills_income_2011$estimate, method = "pearson")
+
+md_annual_pills_2012 <- summarized_county_annual(state = "MD", key = key) 	%>%
+  filter(year == 2012)
+md_pills_income_2012 <- left_join(md_annual_pills_2012, md_tract_income, by = "countyfips")
+cor.test(md_pills_income_2012$DOSAGE_UNIT, md_pills_income_2012$estimate, method = "pearson")
+
+```
+
+
+```{r}
+#13. Prince George's County Tests
+pg_tract_income <- get_acs(geography = "tract", state="MD", county="Prince George's",
+              variables = "B19019_001", geometry = TRUE)
+
+pg_tract <- pharm_tracts(county = "Prince Georges", state = "MD", key = key)
+
+pg_annual_buyer <- combined_buyer_annual(county = "Prince Georges", state = "MD", key = key)
+
+pg_tract_data_working <- left_join(pg_annual_buyer, pg_tract, by="BUYER_DEA_NO")
+
+pg_tract_data_working <- inner_join(pg_tract_data_working, pg_tract_income, by = "GEOID")
+
+subset (pg_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+pg_tract_data_working_2006 <- filter(pg_tract_data_working, year == 2006)
+pg_tract_data_working_2007 <- filter(pg_tract_data_working, year == 2007)
+pg_tract_data_working_2008 <- filter(pg_tract_data_working, year == 2008)
+pg_tract_data_working_2009 <- filter(pg_tract_data_working, year == 2009)
+pg_tract_data_working_2010 <- filter(pg_tract_data_working, year == 2010)
+pg_tract_data_working_2011 <- filter(pg_tract_data_working, year == 2011)
+pg_tract_data_working_2012 <- filter(pg_tract_data_working, year == 2012)
+
+
+#2006
+cor.test(pg_tract_data_working_2006$DOSAGE_UNIT, pg_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(pg_tract_data_working_2007$DOSAGE_UNIT, pg_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(pg_tract_data_working_2008$DOSAGE_UNIT, pg_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(pg_tract_data_working_2009$DOSAGE_UNIT, pg_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(pg_tract_data_working_2010$DOSAGE_UNIT, pg_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(pg_tract_data_working_2011$DOSAGE_UNIT, pg_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(pg_tract_data_working_2012$DOSAGE_UNIT, pg_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+
+```
+
+
+```{r}
+#14. Howard County Tests
+
+howard_tract_income <- get_acs(geography = "tract", state="MD", county="Howard",
+              variables = "B19019_001", geometry = TRUE)
+
+howard_tract <- pharm_tracts(county = "Howard", state = "MD", key = key)
+
+howard_annual_buyer <- combined_buyer_annual(county = "Howard", state = "MD", key = key)
+
+howard_tract_data_working <- left_join(howard_annual_buyer, howard_tract, by="BUYER_DEA_NO")
+
+howard_tract_data_working <- inner_join(howard_tract_data_working, howard_tract_income, by = "GEOID")
+
+subset (howard_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+howard_tract_data_working_2006 <- filter(howard_tract_data_working, year == 2006)
+howard_tract_data_working_2007 <- filter(howard_tract_data_working, year == 2007)
+howard_tract_data_working_2008 <- filter(howard_tract_data_working, year == 2008)
+howard_tract_data_working_2009 <- filter(howard_tract_data_working, year == 2009)
+howard_tract_data_working_2010 <- filter(howard_tract_data_working, year == 2010)
+howard_tract_data_working_2011 <- filter(howard_tract_data_working, year == 2011)
+howard_tract_data_working_2012 <- filter(howard_tract_data_working, year == 2012)
+
+#2006
+cor.test(howard_tract_data_working_2006$DOSAGE_UNIT, howard_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(howard_tract_data_working_2007$DOSAGE_UNIT, howard_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(howard_tract_data_working_2008$DOSAGE_UNIT, howard_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(howard_tract_data_working_2009$DOSAGE_UNIT, howard_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(howard_tract_data_working_2010$DOSAGE_UNIT, howard_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(howard_tract_data_working_2011$DOSAGE_UNIT, howard_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(howard_tract_data_working_2012$DOSAGE_UNIT, howard_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+```
+
+```{r}
+#15. Kent County Tests
+
+Kent County
+
+kent_tract_income <- get_acs(geography = "tract", state="MD", county="kent",
+              variables = "B19019_001", geometry = TRUE)
+
+kent_tract <- pharm_tracts(county = "kent", state = "MD", key = key)
+
+kent_annual_buyer <- combined_buyer_annual(county = "kent", state = "MD", key = key)
+
+kent_tract_data_working <- left_join(kent_annual_buyer, kent_tract, by="BUYER_DEA_NO")
+
+kent_tract_data_working <- inner_join(kent_tract_data_working, kent_tract_income, by = "GEOID")
+
+subset (kent_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+kent_tract_data_working_2006 <- filter(kent_tract_data_working, year == 2006)
+kent_tract_data_working_2007 <- filter(kent_tract_data_working, year == 2007)
+kent_tract_data_working_2008 <- filter(kent_tract_data_working, year == 2008)
+kent_tract_data_working_2009 <- filter(kent_tract_data_working, year == 2009)
+kent_tract_data_working_2010 <- filter(kent_tract_data_working, year == 2010)
+kent_tract_data_working_2011 <- filter(kent_tract_data_working, year == 2011)
+kent_tract_data_working_2012 <- filter(kent_tract_data_working, year == 2012)
+
+
+#2006
+cor.test(kent_tract_data_working_2006$DOSAGE_UNIT, kent_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(kent_tract_data_working_2007$DOSAGE_UNIT, kent_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(kent_tract_data_working_2008$DOSAGE_UNIT, kent_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(kent_tract_data_working_2009$DOSAGE_UNIT, kent_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(kent_tract_data_working_2010$DOSAGE_UNIT, kent_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(kent_tract_data_working_2011$DOSAGE_UNIT, kent_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(kent_tract_data_working_2012$DOSAGE_UNIT, kent_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+```
+
+```{r}
+#16. Garrett County Tests
+arrett_tract_income <- get_acs(geography = "tract", state="MD", county="garrett",
+              variables = "B19019_001", geometry = TRUE)
+
+garrett_tract <- pharm_tracts(county = "garrett", state = "MD", key = key)
+
+garrett_annual_buyer <- combined_buyer_annual(county = "garrett", state = "MD", key = key)
+
+garrett_tract_data_working <- left_join(garrett_annual_buyer, garrett_tract, by="BUYER_DEA_NO")
+
+garrett_tract_data_working <- inner_join(garrett_tract_data_working, garrett_tract_income, by = "GEOID")
+
+subset (garrett_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+garrett_tract_data_working_2006 <- filter(garrett_tract_data_working, year == 2006)
+garrett_tract_data_working_2007 <- filter(garrett_tract_data_working, year == 2007)
+garrett_tract_data_working_2008 <- filter(garrett_tract_data_working, year == 2008)
+garrett_tract_data_working_2009 <- filter(garrett_tract_data_working, year == 2009)
+garrett_tract_data_working_2010 <- filter(garrett_tract_data_working, year == 2010)
+garrett_tract_data_working_2011 <- filter(garrett_tract_data_working, year == 2011)
+garrett_tract_data_working_2012 <- filter(garrett_tract_data_working, year == 2012)
+
+#2006
+cor.test(garrett_tract_data_working_2006$DOSAGE_UNIT, garrett_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(garrett_tract_data_working_2007$DOSAGE_UNIT, garrett_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(garrett_tract_data_working_2008$DOSAGE_UNIT, garrett_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(garrett_tract_data_working_2009$DOSAGE_UNIT, garrett_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(garrett_tract_data_working_2010$DOSAGE_UNIT, garrett_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(garrett_tract_data_working_2011$DOSAGE_UNIT, garrett_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(garrett_tract_data_working_2012$DOSAGE_UNIT, garrett_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+```
+
+```{r}
+#17. Allegany County Tests
+allegany_tract_income <- get_acs(geography = "tract", state="MD", county="allegany",
+              variables = "B19019_001", geometry = TRUE)
+
+allegany_tract <- pharm_tracts(county = "allegany", state = "MD", key = key)
+
+allegany_annual_buyer <- combined_buyer_annual(county = "allegany", state = "MD", key = key)
+
+allegany_tract_data_working <- left_join(allegany_annual_buyer, allegany_tract, by="BUYER_DEA_NO")
+
+allegany_tract_data_working <- inner_join(allegany_tract_data_working, allegany_tract_income, by = "GEOID")
+
+subset (allegany_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+allegany_tract_data_working_2006 <- filter(allegany_tract_data_working, year == 2006)
+allegany_tract_data_working_2007 <- filter(allegany_tract_data_working, year == 2007)
+allegany_tract_data_working_2008 <- filter(allegany_tract_data_working, year == 2008)
+allegany_tract_data_working_2009 <- filter(allegany_tract_data_working, year == 2009)
+allegany_tract_data_working_2010 <- filter(allegany_tract_data_working, year == 2010)
+allegany_tract_data_working_2011 <- filter(allegany_tract_data_working, year == 2011)
+allegany_tract_data_working_2012 <- filter(allegany_tract_data_working, year == 2012)
+
+#2006
+cor.test(allegany_tract_data_working_2006$DOSAGE_UNIT, allegany_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(allegany_tract_data_working_2007$DOSAGE_UNIT, allegany_tract_data_working_2007$estimate, method = "pearson")
+#We reject the null hypothesis!
+
+#2008
+cor.test(allegany_tract_data_working_2008$DOSAGE_UNIT, allegany_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(allegany_tract_data_working_2009$DOSAGE_UNIT, allegany_tract_data_working_2009$estimate, method = "pearson")
+#We  reject the null hypothesis!
+
+#2010
+cor.test(allegany_tract_data_working_2010$DOSAGE_UNIT, allegany_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(allegany_tract_data_working_2011$DOSAGE_UNIT, allegany_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(allegany_tract_data_working_2012$DOSAGE_UNIT, allegany_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+```
+
+```{r}
+#18. Washington County Tests
+
+washington_tract_income <- get_acs(geography = "tract", state="MD", county="washington",
+              variables = "B19019_001", geometry = TRUE)
+
+washington_tract <- pharm_tracts(county = "washington", state = "MD", key = key)
+
+washington_annual_buyer <- combined_buyer_annual(county = "washington", state = "MD", key = key)
+
+washington_tract_data_working <- left_join(washington_annual_buyer, washington_tract, by="BUYER_DEA_NO")
+
+washington_tract_data_working <- inner_join(washington_tract_data_working, washington_tract_income, by = "GEOID")
+
+subset (washington_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+washington_tract_data_working_2006 <- filter(washington_tract_data_working, year == 2006)
+washington_tract_data_working_2007 <- filter(washington_tract_data_working, year == 2007)
+washington_tract_data_working_2008 <- filter(washington_tract_data_working, year == 2008)
+washington_tract_data_working_2009 <- filter(washington_tract_data_working, year == 2009)
+washington_tract_data_working_2010 <- filter(washington_tract_data_working, year == 2010)
+washington_tract_data_working_2011 <- filter(washington_tract_data_working, year == 2011)
+washington_tract_data_working_2012 <- filter(washington_tract_data_working, year == 2012)
+
+#2006
+cor.test(washington_tract_data_working_2006$DOSAGE_UNIT, washington_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(washington_tract_data_working_2007$DOSAGE_UNIT, washington_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(washington_tract_data_working_2008$DOSAGE_UNIT, washington_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(washington_tract_data_working_2009$DOSAGE_UNIT, washington_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(washington_tract_data_working_2010$DOSAGE_UNIT, washington_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(washington_tract_data_working_2011$DOSAGE_UNIT, washington_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(washington_tract_data_working_2012$DOSAGE_UNIT, washington_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+```
+
+```{r}
+#19. Frederick County tests
+
+frederick_tract_income <- get_acs(geography = "tract", state="MD", county="frederick",
+              variables = "B19019_001", geometry = TRUE)
+
+frederick_tract <- pharm_tracts(county = "frederick", state = "MD", key = key)
+
+frederick_annual_buyer <- combined_buyer_annual(county = "frederick", state = "MD", key = key)
+
+frederick_tract_data_working <- left_join(frederick_annual_buyer, frederick_tract, by="BUYER_DEA_NO")
+
+frederick_tract_data_working <- inner_join(frederick_tract_data_working, frederick_tract_income, by = "GEOID")
+
+subset (frederick_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+frederick_tract_data_working_2006 <- filter(frederick_tract_data_working, year == 2006)
+frederick_tract_data_working_2007 <- filter(frederick_tract_data_working, year == 2007)
+frederick_tract_data_working_2008 <- filter(frederick_tract_data_working, year == 2008)
+frederick_tract_data_working_2009 <- filter(frederick_tract_data_working, year == 2009)
+frederick_tract_data_working_2010 <- filter(frederick_tract_data_working, year == 2010)
+frederick_tract_data_working_2011 <- filter(frederick_tract_data_working, year == 2011)
+frederick_tract_data_working_2012 <- filter(frederick_tract_data_working, year == 2012)
+#2006
+
+cor.test(frederick_tract_data_working_2006$DOSAGE_UNIT, frederick_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(frederick_tract_data_working_2007$DOSAGE_UNIT, frederick_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(frederick_tract_data_working_2008$DOSAGE_UNIT, frederick_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(frederick_tract_data_working_2009$DOSAGE_UNIT, frederick_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(frederick_tract_data_working_2010$DOSAGE_UNIT, frederick_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(frederick_tract_data_working_2011$DOSAGE_UNIT, frederick_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(frederick_tract_data_working_2012$DOSAGE_UNIT, frederick_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+```
+
+```{r}
+#20. Carroll County tests
+
+carroll_tract_income <- get_acs(geography = "tract", state="MD", county="carroll",
+              variables = "B19019_001", geometry = TRUE)
+
+carroll_tract <- pharm_tracts(county = "carroll", state = "MD", key = key)
+
+carroll_annual_buyer <- combined_buyer_annual(county = "carroll", state = "MD", key = key)
+
+carroll_tract_data_working <- left_join(carroll_annual_buyer, carroll_tract, by="BUYER_DEA_NO")
+
+carroll_tract_data_working <- inner_join(carroll_tract_data_working, carroll_tract_income, by = "GEOID")
+
+subset (carroll_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+carroll_tract_data_working_2006 <- filter(carroll_tract_data_working, year == 2006)
+carroll_tract_data_working_2007 <- filter(carroll_tract_data_working, year == 2007)
+carroll_tract_data_working_2008 <- filter(carroll_tract_data_working, year == 2008)
+carroll_tract_data_working_2009 <- filter(carroll_tract_data_working, year == 2009)
+carroll_tract_data_working_2010 <- filter(carroll_tract_data_working, year == 2010)
+carroll_tract_data_working_2011 <- filter(carroll_tract_data_working, year == 2011)
+carroll_tract_data_working_2012 <- filter(carroll_tract_data_working, year == 2012)
+
+#2006
+cor.test(carroll_tract_data_working_2006$DOSAGE_UNIT, carroll_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(carroll_tract_data_working_2007$DOSAGE_UNIT, carroll_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(carroll_tract_data_working_2008$DOSAGE_UNIT, carroll_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(carroll_tract_data_working_2009$DOSAGE_UNIT, carroll_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(carroll_tract_data_working_2010$DOSAGE_UNIT, carroll_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(carroll_tract_data_working_2011$DOSAGE_UNIT, carroll_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(carroll_tract_data_working_2012$DOSAGE_UNIT, carroll_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+```
+
+```{r}
+#21. Harford County Tests
+
+harford_tract_income <- get_acs(geography = "tract", state="MD", county="harford",
+              variables = "B19019_001", geometry = TRUE)
+
+harford_tract <- pharm_tracts(county = "harford", state = "MD", key = key)
+
+harford_annual_buyer <- combined_buyer_annual(county = "harford", state = "MD", key = key)
+
+harford_tract_data_working <- left_join(harford_annual_buyer, harford_tract, by="BUYER_DEA_NO")
+
+harford_tract_data_working <- inner_join(harford_tract_data_working, harford_tract_income, by = "GEOID")
+
+subset (harford_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+harford_tract_data_working_2006 <- filter(harford_tract_data_working, year == 2006)
+harford_tract_data_working_2007 <- filter(harford_tract_data_working, year == 2007)
+harford_tract_data_working_2008 <- filter(harford_tract_data_working, year == 2008)
+harford_tract_data_working_2009 <- filter(harford_tract_data_working, year == 2009)
+harford_tract_data_working_2010 <- filter(harford_tract_data_working, year == 2010)
+harford_tract_data_working_2011 <- filter(harford_tract_data_working, year == 2011)
+harford_tract_data_working_2012 <- filter(harford_tract_data_working, year == 2012)
+
+#2006
+cor.test(harford_tract_data_working_2006$DOSAGE_UNIT, harford_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(harford_tract_data_working_2007$DOSAGE_UNIT, harford_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(harford_tract_data_working_2008$DOSAGE_UNIT, harford_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(harford_tract_data_working_2009$DOSAGE_UNIT, harford_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(harford_tract_data_working_2010$DOSAGE_UNIT, harford_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(harford_tract_data_working_2011$DOSAGE_UNIT, harford_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(harford_tract_data_working_2012$DOSAGE_UNIT, harford_tract_data_working_2012$estimate, method = "pearson")
+#We  reject the null!
+
+
+```
+
+```{r}
+#22. Cecil County tests
+
+cecil_tract_income <- get_acs(geography = "tract", state="MD", county="cecil",
+              variables = "B19019_001", geometry = TRUE)
+
+cecil_tract <- pharm_tracts(county = "cecil", state = "MD", key = key)
+
+cecil_annual_buyer <- combined_buyer_annual(county = "cecil", state = "MD", key = key)
+
+cecil_tract_data_working <- left_join(cecil_annual_buyer, cecil_tract, by="BUYER_DEA_NO")
+
+cecil_tract_data_working <- inner_join(cecil_tract_data_working, cecil_tract_income, by = "GEOID")
+
+subset (cecil_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+cecil_tract_data_working_2006 <- filter(cecil_tract_data_working, year == 2006)
+cecil_tract_data_working_2007 <- filter(cecil_tract_data_working, year == 2007)
+cecil_tract_data_working_2008 <- filter(cecil_tract_data_working, year == 2008)
+cecil_tract_data_working_2009 <- filter(cecil_tract_data_working, year == 2009)
+cecil_tract_data_working_2010 <- filter(cecil_tract_data_working, year == 2010)
+cecil_tract_data_working_2011 <- filter(cecil_tract_data_working, year == 2011)
+cecil_tract_data_working_2012 <- filter(cecil_tract_data_working, year == 2012)
+
+#2006
+cor.test(cecil_tract_data_working_2006$DOSAGE_UNIT, cecil_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(cecil_tract_data_working_2007$DOSAGE_UNIT, cecil_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(cecil_tract_data_working_2008$DOSAGE_UNIT, cecil_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(cecil_tract_data_working_2009$DOSAGE_UNIT, cecil_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(cecil_tract_data_working_2010$DOSAGE_UNIT, cecil_tract_data_working_2010$estimate, method = "pearson")
+#We reject the null hypothesis!
+
+#2011
+cor.test(cecil_tract_data_working_2011$DOSAGE_UNIT, cecil_tract_data_working_2011$estimate, method = "pearson")
+#We reject the null hypothesis!
+
+#2012
+cor.test(cecil_tract_data_working_2012$DOSAGE_UNIT, cecil_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+
+```
+
+```{r}
+#23. Caroline County tests
+
+caroline_tract_income <- get_acs(geography = "tract", state="MD", county="caroline",
+              variables = "B19019_001", geometry = TRUE)
+
+caroline_tract <- pharm_tracts(county = "caroline", state = "MD", key = key)
+
+caroline_annual_buyer <- combined_buyer_annual(county = "caroline", state = "MD", key = key)
+
+caroline_tract_data_working <- left_join(caroline_annual_buyer, caroline_tract, by="BUYER_DEA_NO")
+
+caroline_tract_data_working <- inner_join(caroline_tract_data_working, caroline_tract_income, by = "GEOID")
+
+subset (caroline_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+caroline_tract_data_working_2006 <- filter(caroline_tract_data_working, year == 2006)
+caroline_tract_data_working_2007 <- filter(caroline_tract_data_working, year == 2007)
+caroline_tract_data_working_2008 <- filter(caroline_tract_data_working, year == 2008)
+caroline_tract_data_working_2009 <- filter(caroline_tract_data_working, year == 2009)
+caroline_tract_data_working_2010 <- filter(caroline_tract_data_working, year == 2010)
+caroline_tract_data_working_2011 <- filter(caroline_tract_data_working, year == 2011)
+caroline_tract_data_working_2012 <- filter(caroline_tract_data_working, year == 2012)
+
+
+#2006
+cor.test(caroline_tract_data_working_2006$DOSAGE_UNIT, caroline_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(caroline_tract_data_working_2007$DOSAGE_UNIT, caroline_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(caroline_tract_data_working_2008$DOSAGE_UNIT, caroline_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(caroline_tract_data_working_2009$DOSAGE_UNIT, caroline_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(caroline_tract_data_working_2010$DOSAGE_UNIT, caroline_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(caroline_tract_data_working_2011$DOSAGE_UNIT, caroline_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(caroline_tract_data_working_2012$DOSAGE_UNIT, caroline_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+```
+
+
+```{r}
+#24. Talbot County tests
+
+talbot_tract_income <- get_acs(geography = "tract", state="MD", county="talbot",
+              variables = "B19019_001", geometry = TRUE)
+
+talbot_tract <- pharm_tracts(county = "talbot", state = "MD", key = key)
+
+talbot_annual_buyer <- combined_buyer_annual(county = "talbot", state = "MD", key = key)
+
+talbot_tract_data_working <- left_join(talbot_annual_buyer, talbot_tract, by="BUYER_DEA_NO")
+
+talbot_tract_data_working <- inner_join(talbot_tract_data_working, talbot_tract_income, by = "GEOID")
+
+subset (talbot_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+talbot_tract_data_working_2006 <- filter(talbot_tract_data_working, year == 2006)
+talbot_tract_data_working_2007 <- filter(talbot_tract_data_working, year == 2007)
+talbot_tract_data_working_2008 <- filter(talbot_tract_data_working, year == 2008)
+talbot_tract_data_working_2009 <- filter(talbot_tract_data_working, year == 2009)
+talbot_tract_data_working_2010 <- filter(talbot_tract_data_working, year == 2010)
+talbot_tract_data_working_2011 <- filter(talbot_tract_data_working, year == 2011)
+talbot_tract_data_working_2012 <- filter(talbot_tract_data_working, year == 2012)
+
+#2006
+cor.test(talbot_tract_data_working_2006$DOSAGE_UNIT, talbot_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(talbot_tract_data_working_2007$DOSAGE_UNIT, talbot_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(talbot_tract_data_working_2008$DOSAGE_UNIT, talbot_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(talbot_tract_data_working_2009$DOSAGE_UNIT, talbot_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(talbot_tract_data_working_2010$DOSAGE_UNIT, talbot_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(talbot_tract_data_working_2011$DOSAGE_UNIT, talbot_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(talbot_tract_data_working_2012$DOSAGE_UNIT, talbot_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+```
+
+```{r}
+#25. Dorchester County tests
+
+dorchester_tract_income <- get_acs(geography = "tract", state="MD", county="dorchester",
+              variables = "B19019_001", geometry = TRUE)
+
+dorchester_tract <- pharm_tracts(county = "dorchester", state = "MD", key = key)
+
+dorchester_annual_buyer <- combined_buyer_annual(county = "dorchester", state = "MD", key = key)
+
+dorchester_tract_data_working <- left_join(dorchester_annual_buyer, dorchester_tract, by="BUYER_DEA_NO")
+
+dorchester_tract_data_working <- inner_join(dorchester_tract_data_working, dorchester_tract_income, by = "GEOID")
+
+subset (dorchester_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+dorchester_tract_data_working_2006 <- filter(dorchester_tract_data_working, year == 2006)
+dorchester_tract_data_working_2007 <- filter(dorchester_tract_data_working, year == 2007)
+dorchester_tract_data_working_2008 <- filter(dorchester_tract_data_working, year == 2008)
+dorchester_tract_data_working_2009 <- filter(dorchester_tract_data_working, year == 2009)
+dorchester_tract_data_working_2010 <- filter(dorchester_tract_data_working, year == 2010)
+dorchester_tract_data_working_2011 <- filter(dorchester_tract_data_working, year == 2011)
+dorchester_tract_data_working_2012 <- filter(dorchester_tract_data_working, year == 2012)
+
+#2006
+cor.test(dorchester_tract_data_working_2006$DOSAGE_UNIT, dorchester_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(dorchester_tract_data_working_2007$DOSAGE_UNIT, dorchester_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(dorchester_tract_data_working_2008$DOSAGE_UNIT, dorchester_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(dorchester_tract_data_working_2009$DOSAGE_UNIT, dorchester_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(dorchester_tract_data_working_2010$DOSAGE_UNIT, dorchester_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(dorchester_tract_data_working_2011$DOSAGE_UNIT, dorchester_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(dorchester_tract_data_working_2012$DOSAGE_UNIT, dorchester_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+```
+
+```{r}
+#26. Wicomico County tests
+
+wicomico_tract_income <- get_acs(geography = "tract", state="MD", county="wicomico",
+              variables = "B19019_001", geometry = TRUE)
+
+wicomico_tract <- pharm_tracts(county = "wicomico", state = "MD", key = key)
+
+wicomico_annual_buyer <- combined_buyer_annual(county = "wicomico", state = "MD", key = key)
+
+wicomico_tract_data_working <- left_join(wicomico_annual_buyer, wicomico_tract, by="BUYER_DEA_NO")
+
+wicomico_tract_data_working <- inner_join(wicomico_tract_data_working, wicomico_tract_income, by = "GEOID")
+
+subset (wicomico_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+wicomico_tract_data_working_2006 <- filter(wicomico_tract_data_working, year == 2006)
+wicomico_tract_data_working_2007 <- filter(wicomico_tract_data_working, year == 2007)
+wicomico_tract_data_working_2008 <- filter(wicomico_tract_data_working, year == 2008)
+wicomico_tract_data_working_2009 <- filter(wicomico_tract_data_working, year == 2009)
+wicomico_tract_data_working_2010 <- filter(wicomico_tract_data_working, year == 2010)
+wicomico_tract_data_working_2011 <- filter(wicomico_tract_data_working, year == 2011)
+wicomico_tract_data_working_2012 <- filter(wicomico_tract_data_working, year == 2012)
+
+#2006
+cor.test(wicomico_tract_data_working_2006$DOSAGE_UNIT, wicomico_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(wicomico_tract_data_working_2007$DOSAGE_UNIT, wicomico_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(wicomico_tract_data_working_2008$DOSAGE_UNIT, wicomico_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(wicomico_tract_data_working_2009$DOSAGE_UNIT, wicomico_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(wicomico_tract_data_working_2010$DOSAGE_UNIT, wicomico_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(wicomico_tract_data_working_2011$DOSAGE_UNIT, wicomico_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(wicomico_tract_data_working_2012$DOSAGE_UNIT, wicomico_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+```
+
+```{r}
+#27. Somerset County tests
+somerset_tract_income <- get_acs(geography = "tract", state="MD", county="somerset",
+              variables = "B19019_001", geometry = TRUE)
+
+somerset_tract <- pharm_tracts(county = "somerset", state = "MD", key = key)
+
+somerset_annual_buyer <- combined_buyer_annual(county = "somerset", state = "MD", key = key)
+
+somerset_tract_data_working <- left_join(somerset_annual_buyer, somerset_tract, by="BUYER_DEA_NO")
+
+somerset_tract_data_working <- inner_join(somerset_tract_data_working, somerset_tract_income, by = "GEOID")
+
+subset (somerset_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+somerset_tract_data_working_2006 <- filter(somerset_tract_data_working, year == 2006)
+somerset_tract_data_working_2007 <- filter(somerset_tract_data_working, year == 2007)
+somerset_tract_data_working_2008 <- filter(somerset_tract_data_working, year == 2008)
+somerset_tract_data_working_2009 <- filter(somerset_tract_data_working, year == 2009)
+somerset_tract_data_working_2010 <- filter(somerset_tract_data_working, year == 2010)
+somerset_tract_data_working_2011 <- filter(somerset_tract_data_working, year == 2011)
+somerset_tract_data_working_2012 <- filter(somerset_tract_data_working, year == 2012)
+
+#2006
+cor.test(somerset_tract_data_working_2006$DOSAGE_UNIT, somerset_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(somerset_tract_data_working_2007$DOSAGE_UNIT, somerset_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(somerset_tract_data_working_2008$DOSAGE_UNIT, somerset_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(somerset_tract_data_working_2009$DOSAGE_UNIT, somerset_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(somerset_tract_data_working_2010$DOSAGE_UNIT, somerset_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(somerset_tract_data_working_2011$DOSAGE_UNIT, somerset_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(somerset_tract_data_working_2012$DOSAGE_UNIT, somerset_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+```
+
+```{r}
+#28. Worcester County tests
+
+worcester_tract_income <- get_acs(geography = "tract", state="MD", county="worcester",
+              variables = "B19019_001", geometry = TRUE)
+
+worcester_tract <- pharm_tracts(county = "worcester", state = "MD", key = key)
+
+worcester_annual_buyer <- combined_buyer_annual(county = "worcester", state = "MD", key = key)
+
+worcester_tract_data_working <- left_join(worcester_annual_buyer, worcester_tract, by="BUYER_DEA_NO")
+
+worcester_tract_data_working <- inner_join(worcester_tract_data_working, worcester_tract_income, by = "GEOID")
+
+subset (worcester_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+worcester_tract_data_working_2006 <- filter(worcester_tract_data_working, year == 2006)
+worcester_tract_data_working_2007 <- filter(worcester_tract_data_working, year == 2007)
+worcester_tract_data_working_2008 <- filter(worcester_tract_data_working, year == 2008)
+worcester_tract_data_working_2009 <- filter(worcester_tract_data_working, year == 2009)
+worcester_tract_data_working_2010 <- filter(worcester_tract_data_working, year == 2010)
+worcester_tract_data_working_2011 <- filter(worcester_tract_data_working, year == 2011)
+worcester_tract_data_working_2012 <- filter(worcester_tract_data_working, year == 2012)
+
+#2006
+cor.test(worcester_tract_data_working_2006$DOSAGE_UNIT, worcester_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(worcester_tract_data_working_2007$DOSAGE_UNIT, worcester_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(worcester_tract_data_working_2008$DOSAGE_UNIT, worcester_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(worcester_tract_data_working_2009$DOSAGE_UNIT, worcester_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(worcester_tract_data_working_2010$DOSAGE_UNIT, worcester_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(worcester_tract_data_working_2011$DOSAGE_UNIT, worcester_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(worcester_tract_data_working_2012$DOSAGE_UNIT, worcester_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+```
+
+```{r}
+#29. Calvert County tests
+
+calvert_tract_income <- get_acs(geography = "tract", state="MD", county="calvert",
+              variables = "B19019_001", geometry = TRUE)
+
+calvert_tract <- pharm_tracts(county = "calvert", state = "MD", key = key)
+
+calvert_annual_buyer <- combined_buyer_annual(county = "calvert", state = "MD", key = key)
+
+calvert_tract_data_working <- left_join(calvert_annual_buyer, calvert_tract, by="BUYER_DEA_NO")
+
+calvert_tract_data_working <- inner_join(calvert_tract_data_working, calvert_tract_income, by = "GEOID")
+
+subset (calvert_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+calvert_tract_data_working_2006 <- filter(calvert_tract_data_working, year == 2006)
+calvert_tract_data_working_2007 <- filter(calvert_tract_data_working, year == 2007)
+calvert_tract_data_working_2008 <- filter(calvert_tract_data_working, year == 2008)
+calvert_tract_data_working_2009 <- filter(calvert_tract_data_working, year == 2009)
+calvert_tract_data_working_2010 <- filter(calvert_tract_data_working, year == 2010)
+calvert_tract_data_working_2011 <- filter(calvert_tract_data_working, year == 2011)
+calvert_tract_data_working_2012 <- filter(calvert_tract_data_working, year == 2012)
+
+#2006
+cor.test(calvert_tract_data_working_2006$DOSAGE_UNIT, calvert_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(calvert_tract_data_working_2007$DOSAGE_UNIT, calvert_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(calvert_tract_data_working_2008$DOSAGE_UNIT, calvert_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(calvert_tract_data_working_2009$DOSAGE_UNIT, calvert_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(calvert_tract_data_working_2010$DOSAGE_UNIT, calvert_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(calvert_tract_data_working_2011$DOSAGE_UNIT, calvert_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(calvert_tract_data_working_2012$DOSAGE_UNIT, calvert_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+```
+
+```{r}
+#30. Charles County tests
+
+charles_tract_income <- get_acs(geography = "tract", state="MD", county="charles",
+              variables = "B19019_001", geometry = TRUE)
+
+charles_tract <- pharm_tracts(county = "charles", state = "MD", key = key)
+
+charles_annual_buyer <- combined_buyer_annual(county = "charles", state = "MD", key = key)
+
+charles_tract_data_working <- left_join(charles_annual_buyer, charles_tract, by="BUYER_DEA_NO")
+
+charles_tract_data_working <- inner_join(charles_tract_data_working, charles_tract_income, by = "GEOID")
+
+subset (charles_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+charles_tract_data_working_2006 <- filter(charles_tract_data_working, year == 2006)
+charles_tract_data_working_2007 <- filter(charles_tract_data_working, year == 2007)
+charles_tract_data_working_2008 <- filter(charles_tract_data_working, year == 2008)
+charles_tract_data_working_2009 <- filter(charles_tract_data_working, year == 2009)
+charles_tract_data_working_2010 <- filter(charles_tract_data_working, year == 2010)
+charles_tract_data_working_2011 <- filter(charles_tract_data_working, year == 2011)
+charles_tract_data_working_2012 <- filter(charles_tract_data_working, year == 2012)
+
+
+#2006
+cor.test(charles_tract_data_working_2006$DOSAGE_UNIT, charles_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(charles_tract_data_working_2007$DOSAGE_UNIT, charles_tract_data_working_2007$estimate, method = "pearson")
+#We REJECT the null!
+
+#2008
+cor.test(charles_tract_data_working_2008$DOSAGE_UNIT, charles_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(charles_tract_data_working_2009$DOSAGE_UNIT, charles_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(charles_tract_data_working_2010$DOSAGE_UNIT, charles_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(charles_tract_data_working_2011$DOSAGE_UNIT, charles_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(charles_tract_data_working_2012$DOSAGE_UNIT, charles_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+```
+
+```{r}
+#31. Queen Anne's Tests
+
+quenna_tract_income <- get_acs(geography = "tract", state="MD", county="Queen Anne's",
+              variables = "B19019_001", geometry = TRUE)
+
+quenna_tract <- pharm_tracts(county = "Queen Annes", state = "MD", key = key)
+
+quenna_annual_buyer <- combined_buyer_annual(county = "Queen Annes", state = "MD", key = key)
+
+quenna_tract_data_working <- left_join(quenna_annual_buyer, quenna_tract, by="BUYER_DEA_NO")
+
+quenna_tract_data_working <- inner_join(quenna_tract_data_working, quenna_tract_income, by = "GEOID")
+
+subset (quenna_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+quenna_tract_data_working_2006 <- filter(quenna_tract_data_working, year == 2006)
+quenna_tract_data_working_2007 <- filter(quenna_tract_data_working, year == 2007)
+quenna_tract_data_working_2008 <- filter(quenna_tract_data_working, year == 2008)
+quenna_tract_data_working_2009 <- filter(quenna_tract_data_working, year == 2009)
+quenna_tract_data_working_2010 <- filter(quenna_tract_data_working, year == 2010)
+quenna_tract_data_working_2011 <- filter(quenna_tract_data_working, year == 2011)
+quenna_tract_data_working_2012 <- filter(quenna_tract_data_working, year == 2012)
+
+#2006
+cor.test(quenna_tract_data_working_2006$DOSAGE_UNIT, quenna_tract_data_working_2006$estimate, method = "pearson")
+#We REJECT the null!
+
+#2007
+cor.test(quenna_tract_data_working_2007$DOSAGE_UNIT, quenna_tract_data_working_2007$estimate, method = "pearson")
+#We REJECT the null!
+
+#2008
+cor.test(quenna_tract_data_working_2008$DOSAGE_UNIT, quenna_tract_data_working_2008$estimate, method = "pearson")
+#We REJECT the null!
+
+#2009
+cor.test(quenna_tract_data_working_2009$DOSAGE_UNIT, quenna_tract_data_working_2009$estimate, method = "pearson")
+#We REJECT the null!
+
+#2010
+cor.test(quenna_tract_data_working_2010$DOSAGE_UNIT, quenna_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(quenna_tract_data_working_2011$DOSAGE_UNIT, quenna_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(quenna_tract_data_working_2012$DOSAGE_UNIT, quenna_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+```
+
+```{r}
+#32. Baltimore County Tests
+
+balco_tract_income <- get_acs(geography = "tract", state="MD", county="Baltimore County",
+              variables = "B19019_001", geometry = TRUE)
+
+balco_tract <- pharm_tracts(county = "Baltimore", state = "MD", key = key)
+
+balco_annual_buyer <- combined_buyer_annual(county = "Baltimore", state = "MD", key = key)
+
+balco_tract_data_working <- left_join(balco_annual_buyer, balco_tract, by="BUYER_DEA_NO")
+
+balco_tract_data_working <- inner_join(balco_tract_data_working, balco_tract_income, by = "GEOID")
+
+subset (balco_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+balco_tract_data_working_2006 <- filter(balco_tract_data_working, year == 2006)
+balco_tract_data_working_2007 <- filter(balco_tract_data_working, year == 2007)
+balco_tract_data_working_2008 <- filter(balco_tract_data_working, year == 2008)
+balco_tract_data_working_2009 <- filter(balco_tract_data_working, year == 2009)
+balco_tract_data_working_2010 <- filter(balco_tract_data_working, year == 2010)
+balco_tract_data_working_2011 <- filter(balco_tract_data_working, year == 2011)
+balco_tract_data_working_2012 <- filter(balco_tract_data_working, year == 2012)
+
+#2006
+cor.test(balco_tract_data_working_2006$DOSAGE_UNIT, balco_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(balco_tract_data_working_2007$DOSAGE_UNIT, balco_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(balco_tract_data_working_2008$DOSAGE_UNIT, balco_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(balco_tract_data_working_2009$DOSAGE_UNIT, balco_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(balco_tract_data_working_2010$DOSAGE_UNIT, balco_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(balco_tract_data_working_2011$DOSAGE_UNIT, balco_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(balco_tract_data_working_2012$DOSAGE_UNIT, balco_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+```
+
+```{r}
+#33. Baltimore City tests
+balcit_tract_income <- get_acs(geography = "tract", state="MD", county="Baltimore city",
+              variables = "B19019_001", geometry = TRUE)
+
+balcit_tract <- pharm_tracts(county = "Baltimore city", state = "MD", key = key)
+
+balcit_annual_buyer <- combined_buyer_annual(county = "Baltimore city", state = "MD", key = key)
+
+balcit_tract_data_working <- left_join(balcit_annual_buyer, balcit_tract, by="BUYER_DEA_NO")
+
+balcit_tract_data_working <- inner_join(balcit_tract_data_working, balcit_tract_income, by = "GEOID")
+
+subset (balcit_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+balcit_tract_data_working_2006 <- filter(balcit_tract_data_working, year == 2006)
+balcit_tract_data_working_2007 <- filter(balcit_tract_data_working, year == 2007)
+balcit_tract_data_working_2008 <- filter(balcit_tract_data_working, year == 2008)
+balcit_tract_data_working_2009 <- filter(balcit_tract_data_working, year == 2009)
+balcit_tract_data_working_2010 <- filter(balcit_tract_data_working, year == 2010)
+balcit_tract_data_working_2011 <- filter(balcit_tract_data_working, year == 2011)
+balcit_tract_data_working_2012 <- filter(balcit_tract_data_working, year == 2012)
+
+#2006
+cor.test(balcit_tract_data_working_2006$DOSAGE_UNIT, balcit_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(balcit_tract_data_working_2007$DOSAGE_UNIT, balcit_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(balcit_tract_data_working_2008$DOSAGE_UNIT, balcit_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(balcit_tract_data_working_2009$DOSAGE_UNIT, balcit_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(balcit_tract_data_working_2010$DOSAGE_UNIT, balcit_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(balcit_tract_data_working_2011$DOSAGE_UNIT, balcit_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(balcit_tract_data_working_2012$DOSAGE_UNIT, balcit_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+```
+
+```{r}
+#34. St. Mary's County tests
+stmary_tract_income <- get_acs(geography = "tract", state="MD", county="St. Mary's",
+              variables = "B19019_001", geometry = TRUE)
+
+stmary_tract <- pharm_tracts(county = "Saint Marys", state = "MD", key = key)
+
+stmary_annual_buyer <- combined_buyer_annual(county = "Saint Marys", state = "MD", key = key)
+
+stmary_tract_data_working <- left_join(stmary_annual_buyer, stmary_tract, by="BUYER_DEA_NO")
+
+stmary_tract_data_working <- inner_join(stmary_tract_data_working, stmary_tract_income, by = "GEOID")
+
+subset (stmary_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+stmary_tract_data_working_2006 <- filter(stmary_tract_data_working, year == 2006)
+stmary_tract_data_working_2007 <- filter(stmary_tract_data_working, year == 2007)
+stmary_tract_data_working_2008 <- filter(stmary_tract_data_working, year == 2008)
+stmary_tract_data_working_2009 <- filter(stmary_tract_data_working, year == 2009)
+stmary_tract_data_working_2010 <- filter(stmary_tract_data_working, year == 2010)
+stmary_tract_data_working_2011 <- filter(stmary_tract_data_working, year == 2011)
+stmary_tract_data_working_2012 <- filter(stmary_tract_data_working, year == 2012)
+
+#2006
+cor.test(stmary_tract_data_working_2006$DOSAGE_UNIT, stmary_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(stmary_tract_data_working_2007$DOSAGE_UNIT, stmary_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(stmary_tract_data_working_2008$DOSAGE_UNIT, stmary_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(stmary_tract_data_working_2009$DOSAGE_UNIT, stmary_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(stmary_tract_data_working_2010$DOSAGE_UNIT, stmary_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(stmary_tract_data_working_2011$DOSAGE_UNIT, stmary_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(stmary_tract_data_working_2012$DOSAGE_UNIT, stmary_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+
+```
+
+```{r}
+#35. Anne Arundel County Tests
+
+annea_tract_income <- get_acs(geography = "tract", state="MD", county="Anne Arundel",
+              variables = "B19019_001", geometry = TRUE)
+
+annea_tract <- pharm_tracts(county = "Anne Arundel", state = "MD", key = key)
+
+annea_annual_buyer <- combined_buyer_annual(county = "Anne Arundel", state = "MD", key = key)
+
+annea_tract_data_working <- left_join(annea_annual_buyer, annea_tract, by="BUYER_DEA_NO")
+
+annea_tract_data_working <- inner_join(annea_tract_data_working, annea_tract_income, by = "GEOID")
+
+subset (annea_tract_data_working, select = c(BUYER_DEA_NO, year, DOSAGE_UNIT, GEOID, TRACTCE))
+
+
+annea_tract_data_working_2006 <- filter(annea_tract_data_working, year == 2006)
+annea_tract_data_working_2007 <- filter(annea_tract_data_working, year == 2007)
+annea_tract_data_working_2008 <- filter(annea_tract_data_working, year == 2008)
+annea_tract_data_working_2009 <- filter(annea_tract_data_working, year == 2009)
+annea_tract_data_working_2010 <- filter(annea_tract_data_working, year == 2010)
+annea_tract_data_working_2011 <- filter(annea_tract_data_working, year == 2011)
+annea_tract_data_working_2012 <- filter(annea_tract_data_working, year == 2012)
+
+#2006
+cor.test(annea_tract_data_working_2006$DOSAGE_UNIT, annea_tract_data_working_2006$estimate, method = "pearson")
+#fail to reject the null
+
+#2007
+cor.test(annea_tract_data_working_2007$DOSAGE_UNIT, annea_tract_data_working_2007$estimate, method = "pearson")
+#fail to reject the null
+
+#2008
+cor.test(annea_tract_data_working_2008$DOSAGE_UNIT, annea_tract_data_working_2008$estimate, method = "pearson")
+#fail to reject the null
+
+#2009
+cor.test(annea_tract_data_working_2009$DOSAGE_UNIT, annea_tract_data_working_2009$estimate, method = "pearson")
+#fail to reject the null
+
+#2010
+cor.test(annea_tract_data_working_2010$DOSAGE_UNIT, annea_tract_data_working_2010$estimate, method = "pearson")
+#fail to reject the null
+
+#2011
+cor.test(annea_tract_data_working_2011$DOSAGE_UNIT, annea_tract_data_working_2011$estimate, method = "pearson")
+#fail to reject the null
+
+#2012
+cor.test(annea_tract_data_working_2012$DOSAGE_UNIT, annea_tract_data_working_2012$estimate, method = "pearson")
+#fail to reject the null
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
